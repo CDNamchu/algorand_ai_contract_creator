@@ -50,7 +50,20 @@ algorand-ai-contract-creator/
 ├── CONTRIBUTING.md                   # Contribution guidelines
 ├── CHANGELOG.md                      # Version history
 └── .algokit.toml                     # AlgoKit configuration
+└── .env.example                      # Add here your API's
+└── .gitignore                        # Make sure to add anything else you don't want to show your mum
+└── #ai_generations.log               # Logs that gets created after you run the app
+└── algorand_ai_contract_creator.code-workspace # Your workspace info
+└── CHANGELOG.md                      # What you have to update with your updates when you update
+└── CONTRIBUTING.md                   # Instructions, in case you new you can also reach out
+└── LICENSE                           # Off the market... Sorry
+└── main.py                           # You would be a criminal if you didn't have one
+└── pyproject.toml                    # Pyproject record, touch if you know where
+└── README.md                         # You are reading it, well done!
+└── requirements-dev.txt              # Install these after installing the following
+└── requirements.txt                  # Well, above is a 'rule of thumb'
 ```
+
 
 ## 🚀 Quick Start
 
@@ -297,3 +310,4 @@ If you'd like different names or a different layout, tell me and I can change th
 
 
 **⚠️ DISCLAIMER**: This tool generates smart contracts for educational and testing purposes. Always conduct thorough security audits before deploying to MainNet. AI-generated code should be reviewed by experienced developers.
+
