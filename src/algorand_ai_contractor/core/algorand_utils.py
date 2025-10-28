@@ -57,28 +57,77 @@ class AlgorandDeployer:
             # Execute PyTeal code to get program
             exec(pyteal_code, namespace)
             
-            # Look for approval_program or router
+            # Look for approval_program or router or app in the executed namespace
             approval_program = None
             for name in ['approval_program', 'router', 'app']:
                 if name in namespace:
                     approval_program = namespace[name]
                     break
-            
+
+            # If we found a callable (function) try to call it if it accepts no arguments
+            import inspect
+            from pyteal import Expr
+
+            def _resolve_candidate(obj):
+                """If obj is a zero-arg callable, call it and return the result; otherwise return obj."""
+                try:
+                    if callable(obj):
+                        sig = None
+                        try:
+                            sig = inspect.signature(obj)
+                        except (ValueError, TypeError):
+                            sig = None
+                        if sig is None or len(sig.parameters) == 0:
+                            return obj()
+                    return obj
+                except Exception:
+                    # If calling raised, ignore and return original object
+                    return obj
+
+            if approval_program is not None:
+                approval_program = _resolve_candidate(approval_program)
+
+            # If not found yet, try to discover a PyTeal Expr in the namespace
             if approval_program is None:
-                # Try to find any Expr object
+                # First try to find objects that look like PyTeal Exprs directly
                 for obj in namespace.values():
-                    if hasattr(obj, '_class_') and 'pyteal' in str(type(obj)).lower():
-                        approval_program = obj
-                        break
-            
+                    try:
+                        if isinstance(obj, Expr):
+                            approval_program = obj
+                            break
+                    except Exception:
+                        pass
+
+            # If still not found, try calling zero-arg callables and test compileTeal on result
+            if approval_program is None:
+                for obj in namespace.values():
+                    if callable(obj):
+                        try:
+                            sig = None
+                            try:
+                                sig = inspect.signature(obj)
+                            except (ValueError, TypeError):
+                                sig = None
+                            if sig is None or len(sig.parameters) == 0:
+                                candidate = obj()
+                                # quick compile test to verify it's a PyTeal program
+                                try:
+                                    compileTeal(candidate, mode, version=6)
+                                    approval_program = candidate
+                                    break
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+
             if approval_program is None:
                 return {
                     'success': False,
                     'error': 'No PyTeal program found. Ensure you define approval_program variable.'
                 }
-            
-            # Compile to TEAL
-            teal_code = compileTeal(approval_program, mode, version=8)
+
+            # Compile to TEAL (use TEAL v6 for broader compatibility)
+            teal_code = compileTeal(approval_program, mode, version=6)
             
             # Compile TEAL to bytecode
             compile_response = self.algod_client.compile(teal_code)

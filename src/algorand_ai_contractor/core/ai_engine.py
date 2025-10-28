@@ -128,6 +128,8 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
 
                 raw_output = response.choices[0].message.content
                 parsed = self._parse_ai_response(raw_output)
+                # Sanitize the parsed code to remove common generator artifacts
+                parsed['code'] = self._sanitize_code(parsed['code'])
                 validation_result = self._validate_pyteal_syntax(parsed['code'])
 
                 if validation_result['valid']:
@@ -179,19 +181,118 @@ PREVIOUS ATTEMPT FAILED WITH ERROR:
         return base
 
     def _parse_ai_response(self, raw_output: str) -> Dict[str, str]:
-        """Dummy parser for AI response (to be implemented)."""
-        return {
-            "code": raw_output,
-            "explanation": "",
-            "deployment": "",
-            "audit": ""
-        }
+                """Parse the AI response and extract the PyTeal code block.
+
+                This parser is defensive:
+                - If the model returns a fenced code block (```...```), extract the first block
+                    and drop any leading language tag (e.g. ```python).
+                - Otherwise, attempt to split the response from trailing human-readable
+                    sections (markdown separators or headings).
+                - Returns a dict with keys: code, explanation, deployment, audit. The latter
+                    fields may be empty if the model did not provide structured sections.
+                """
+                code = raw_output
+                explanation = ""
+                deployment = ""
+                audit = ""
+
+                # If the AI returned a fenced code block, extract the inner content.
+                if "```" in raw_output:
+                        start = raw_output.find("```")
+                        # find closing fence after the opening
+                        end = raw_output.find("```", start + 3)
+                        if end != -1:
+                                inner = raw_output[start + 3:end]
+                                # remove optional language token like 'python' at the start
+                                inner = inner.lstrip()
+                                if inner.startswith("python"):
+                                        inner = inner[len("python"):].lstrip()
+                                code = inner.strip()
+
+                                # Anything after the first code fence is treated as explanation/audit text
+                                tail = raw_output[end + 3 :].strip()
+                                if tail:
+                                        explanation = tail
+                else:
+                        # Try to split on a common markdown separator used by the generator
+                        for sep in ["\n\n---", "\n---", "\n**Contract Purpose Summary:", "\n**Contract Purpose Summary**"]:
+                                if sep in raw_output:
+                                        parts = raw_output.split(sep, 1)
+                                        code = parts[0].strip()
+                                        explanation = parts[1].strip()
+                                        break
+
+                return {"code": code, "explanation": explanation, "deployment": deployment, "audit": audit}
 
     def _validate_pyteal_syntax(self, code: str) -> Dict[str, str]:
-        """Simple syntax validation placeholder."""
-        if "approval_program" in code:
+        """Basic safety and content checks on the generated code.
+
+        This is intentionally lightweight: it rejects obviously dangerous patterns
+        and ensures the response contains expected PyTeal markers. A downstream
+        compilation step should be used to validate full correctness.
+        """
+        # Reject obviously dangerous Python patterns
+        dangerous = ["eval(", "exec(", "open(", "subprocess", "os.system", "pickle.loads"]
+        for pat in dangerous:
+            if pat in code:
+                return {"valid": False, "error": f"Dangerous pattern detected: {pat}"}
+
+        # Heuristic: ensure the response contains PyTeal-related content
+        lower = code.lower()
+        if "from pyteal" in lower or "import pyteal" in lower or "txn" in lower or "app.globalput" in lower:
             return {"valid": True}
-        return {"valid": False, "error": "Missing approval program definition."}
+
+        return {"valid": False, "error": "Missing expected PyTeal content or approval program."}
+
+    def _sanitize_code(self, code: str) -> str:
+        """Sanitize AI-generated code before saving/validating.
+
+        Operations performed:
+        - Extract first fenced code block if present (```...```).
+        - Remove trailing markdown sections after common separators.
+        - Replace Addr(some_variable_expression) with the inner expression when the
+          argument is not a string literal (e.g., Addr(Txn.application_args[0]) -> Txn.application_args[0]).
+        - Keep Addr("literal") intact.
+        - Trim leading/trailing whitespace and ensure a final newline.
+        """
+        import re
+
+        if not code:
+            return code
+
+        sanitized = code
+
+        # 1) If there's a fenced code block, extract the first one
+        if '```' in sanitized:
+            start = sanitized.find('```')
+            end = sanitized.find('```', start + 3)
+            if end != -1:
+                inner = sanitized[start + 3:end]
+                # Remove optional language token (e.g., python) from the start
+                inner = re.sub(r'^\s*python\s*\n', '', inner, flags=re.IGNORECASE)
+                sanitized = inner
+
+        # 2) Remove trailing markdown after common separators
+        for sep in ['\n\n---', '\n---', '\n**Contract Purpose Summary:', '\n**Logic Walkthrough:', '\n**Security Considerations:']:
+            if sep in sanitized:
+                sanitized = sanitized.split(sep, 1)[0]
+
+        # 3) Replace Addr(<non-literal>) with the inner expression
+        # Keep Addr("literal") intact
+        def _addr_repl(m: re.Match) -> str:
+            inner = m.group(1).strip()
+            # If inner is quoted (literal), keep the Addr(...) as-is
+            if re.match(r'^["\']', inner):
+                return f'Addr({inner})'
+            # otherwise, return the inner expression without Addr()
+            return inner
+
+        sanitized = re.sub(r'Addr\(([^)]+)\)', _addr_repl, sanitized)
+
+        # 4) Ensure final newline
+        sanitized = sanitized.strip() + '\n'
+
+        return sanitized
 
     def _log_generation(
         self,
