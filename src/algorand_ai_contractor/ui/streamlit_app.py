@@ -7,6 +7,7 @@ import streamlit as st
 import json
 from datetime import datetime
 from pathlib import Path
+import os
 from algorand_ai_contractor.core.ai_engine import ContractGenerator, explain_contract
 from algorand_ai_contractor.core.algorand_utils import AlgorandDeployer, create_simple_clear_program
 
@@ -164,7 +165,7 @@ with tab1:
                 
                 st.success(f"✅ Contract generated in {result['metadata']['attempts']} attempt(s)")
                 if saved_path:
-                    st.info(f"📁 Saved to: `{saved_path.relative_to(Path.cwd())}`")
+                    st.info(f"📁 Saved to: `{os.path.relpath(str(saved_path), str(Path.cwd()))}`")
             else:
                 st.error(f"❌ Generation failed: {result['error']}")
                 st.stop()

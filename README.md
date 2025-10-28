@@ -148,6 +148,36 @@ streamlit run tools\web_interface.py
 
 Navigate to `http://localhost:8501`
 
+### Run via `main.py` (recommended)
+
+The repository includes a small launcher `main.py` that ensures the `src` package
+directory is on Python's import path so you can run the dashboard with a single
+command (no need to set `PYTHONPATH` manually):
+
+```bash
+# from the project root, with your virtualenv activated
+python main.py
+```
+
+This behaves like `streamlit run src/algorand_ai_contractor/ui/streamlit_app.py`,
+but `main.py` inserts the `src` folder into `sys.path` at startup so imports
+like `import algorand_ai_contractor` resolve correctly.
+
+Troubleshooting:
+- If you still see "ModuleNotFoundError: No module named 'algorand_ai_contractor'",
+  first ensure your virtualenv is activated and you launched `python main.py`
+  from the repository root. As a fallback you can also run:
+
+```bash
+PYTHONPATH=src python main.py
+```
+
+or run Streamlit directly with the `PYTHONPATH` set:
+
+```bash
+PYTHONPATH=src python -m streamlit run src/algorand_ai_contractor/ui/streamlit_app.py
+```
+
 ## 📖 Usage
 
 ### 1. Generate Contract
