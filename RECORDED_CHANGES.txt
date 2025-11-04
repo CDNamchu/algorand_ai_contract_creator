@@ -1,0 +1,61 @@
+Recorded changes and summary
+Repository: algorand_ai_contract_creator
+Branch: Syntax_fix
+Commit: d1d4978 (pushed to origin)
+Date: 2025-10-29
+
+Summary of changes, rationale, and next steps
+
+1) High-level goal
+- Fix generated smart contract files that contained syntax errors so they compile and deploy.
+- Prevent future generator outputs from being wrapped in markdown/code fences and avoid invalid uses of Addr(...).
+- Harden compile-detection so the dashboard's "Compile to TEAL" step reliably finds and compiles the approval program.
+
+2) Files changed / features implemented
+- src/algorand_ai_contractor/core/ai_engine.py
+  - Added parsing and sanitization of AI responses:
+    - _parse_ai_response(raw_output): extracts fenced code blocks and separates explanation text.
+    - _sanitize_code(code): strips markdown code fences, removes trailing explanation sections, and rewrites unsafe Addr(non-literal) usages into runtime-friendly expressions (e.g. Addr(Txn.application_args[0]) -> Txn.application_args[0]). Ensures a trailing newline.
+  - Hooked sanitizer into generate_pyteal_contract so saved output is sanitized before validation and save.
+  - Hardened validation: _validate_pyteal_syntax now rejects obvious dangerous Python patterns and heuristically ensures PyTeal content exists.
+
+- src/algorand_ai_contractor/core/algorand_utils.py
+  - Enhanced compile_pyteal_to_teal detection logic to accept multiple common generator shapes:
+    - Detects variables named approval_program/app/router/app etc.
+    - If a callable is found, will attempt to call zero-arg factory functions and inspect the returned object.
+    - Accepts direct pyteal.Expr instances in the executed namespace.
+    - Performs a quick TEAL v6 compile to validate candidate programs before returning success.
+
+- outputs/contracts/* (examples)
+  - Cleaned and created sanitized example files used for local verification:
+    - outputs/contracts/contract_20251028_192257_clean.py — removed markdown fences and placeholder invalid addresses; validated compilation to TEAL v6 locally.
+    - Updated outputs/contracts/contract_20251028_195226.py — replaced Addr(Txn.application_args[...]) patterns with Txn.accounts[...] when appropriate, reordered Gtxn checks to assert Global.group_size() before accessing Gtxn indices, fixed payment/Gtxn indexing logic.
+
+3) Why these changes
+- Generative models commonly return code wrapped in markdown fences, and include explanatory text or non-literal Address calls. Executing or importing such raw outputs causes SyntaxError or PyTeal validation failures. Sanitization prevents saving those artifacts and reduces false-negative compile errors in the UI.
+- Many generator outputs come in several shapes (module-level Expr, zero-arg factory function, or variable assignment). Accepting those shapes makes the UI compile step more tolerant and reduces user friction.
+
+4) Tests and verification performed
+- Local sanitizer test: fed an AI-style fenced code block containing Addr(Txn.application_args[0]) to the new sanitizer; sanitizer output replaced the Addr(...) construct as expected.
+- Local compile verification: ran the improved compile pipeline on cleaned example contracts. The compile routine returned success and produced TEAL v6 output for previously failing generated contracts.
+- Commit and push: changes committed and pushed to branch Syntax_fix with commit id d1d4978.
+
+5) Remaining / recommended next steps
+- Implement a compile-before-save gate: call compile_pyteal_to_teal on sanitized code; only persist to outputs/contracts/ if compilation succeeds. If compile fails, return the compilation error to the UI and do not save. Priority: high.
+- Add CI test: a pytest that enumerates all files under outputs/contracts/*.py, imports each, and attempts a compile check. Fail CI if any do not compile. Priority: medium.
+- Update the generator prompt to instruct the model to return a zero-arg factory function named approval_program or a top-level variable named approval_program (this reduces ambiguity and makes detection easier). Priority: low.
+- Consider additional sandboxing: avoid executing untrusted top-level code during exec() by more restrictive parsing or AST-based extraction. Priority: medium.
+
+6) Notes & lessons
+- Do not trust generative output to be pure Python: sanitize before saving or executing.
+- Avoid Addr(non-literal): runtime-supplied accounts should be passed via Txn.accounts[] or via explicit string literals when suitable.
+- Accept multiple program shapes for better UX, but gate saving with a compile check.
+
+7) Recent agent actions (human-readable)
+1. Inspected repository to find where generated contracts are saved and where generator parsing occurs (found scripts/auto_generate.py and src/algorand_ai_contractor/core/ai_engine.py).
+2. Implemented parser and sanitizer in ai_engine.py and iteratively fixed placement/syntax issues.
+3. Cleaned example generated contracts and tested local compilation; fixed invalid placeholder addresses where needed.
+4. Hardened compile detection in algorand_utils.py to call zero-arg factory functions and detect Expr instances; performed quick compile tests.
+5. Committed and pushed changes to branch Syntax_fix (commit d1d4978).
+
+End of recorded changes.
