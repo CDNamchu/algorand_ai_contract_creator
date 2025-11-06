@@ -370,6 +370,16 @@ Please fix this error and regenerate valid PyTeal code."""
             return inner
 
         sanitized = re.sub(r'Addr\(([^)]+)\)', _addr_repl, sanitized)
+        
+        # Fix common PyTeal bugs: Txn.application_args without indexing
+        # Pattern: globalPut/localPut(key, Txn.application_args) → should be Txn.application_args[0]
+        # This is a common AI mistake
+        sanitized = re.sub(
+            r'(globalPut|localPut)\s*\(\s*([^,]+),\s*Txn\.application_args\s*\)',
+            r'\1(\2, Txn.application_args[0])',
+            sanitized
+        )
+        
         sanitized = sanitized.strip() + '\n'
 
         return sanitized

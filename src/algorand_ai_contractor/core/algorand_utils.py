@@ -109,15 +109,22 @@ class AlgorandDeployer:
                             except (ValueError, TypeError):
                                 sig = None
                             if sig is None or len(sig.parameters) == 0:
-                                candidate = obj()
+                                try:
+                                    candidate = obj()
+                                except Exception as call_err:
+                                    # Function call failed - log and continue
+                                    logging.debug(f"Failed to call {obj}: {call_err}")
+                                    continue
                                 # quick compile test to verify it's a PyTeal program
                                 try:
                                     compileTeal(candidate, mode, version=6)
                                     approval_program = candidate
                                     break
-                                except Exception:
+                                except Exception as compile_err:
+                                    logging.debug(f"Candidate compile failed: {compile_err}")
                                     continue
-                        except Exception:
+                        except Exception as outer_err:
+                            logging.debug(f"Error processing callable: {outer_err}")
                             continue
 
             if approval_program is None:
