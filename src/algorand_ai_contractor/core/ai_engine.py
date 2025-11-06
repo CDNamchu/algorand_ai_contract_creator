@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from typing import Dict, Optional
 import subprocess
 import tempfile
+import traceback
 from .syntax_fixer import auto_format_code, custom_syntax_fix
 
 
@@ -33,27 +34,7 @@ logging.basicConfig(
 from pyteal import compileTeal, Mode
 
 # -------------------- Syntax Fixer --------------------
-
-def auto_format_code(code_str: str) -> str:
-    """
-    Auto-format Python code string using black formatter.
-    """
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.py') as tmp_file:
-        tmp_file.write(code_str)
-        tmp_file.flush()
-        # Run black formatter on the temp file (silently)
-        subprocess.run(['black', tmp_file.name], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        tmp_file.seek(0)
-        formatted_code = tmp_file.read()
-    return formatted_code
-
-def custom_syntax_fix(code_str: str) -> str:
-    """
-    Apply custom syntax fixes for common AI-generated code issues.
-    Add your specific fixes here.
-    """
-    # Placeholder for custom regex fixes if needed
-    return code_str
+# Use formatter/fixer implementation from `src/.../syntax_fixer.py` (imported above).
 
 # -------------------- Validation Functions --------------------
 
@@ -162,15 +143,20 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
                 )
 
                 raw_output = response.choices[0].message.content
+                logging.debug("Raw AI output:\n%s", raw_output)
                 parsed = self._parse_ai_response(raw_output)
+                logging.debug("Parsed code from AI response:\n%s", parsed['code'])
                 # Sanitize the parsed code to remove common generator artifacts
                 parsed['code'] = self._sanitize_code(parsed['code'])
 
                 # **Syntax Fix Pipeline:**
                 # Step 1. Auto-format code
+                logging.debug("Code before fixer:\n%s", parsed.get('code'))
                 formatted_code = auto_format_code(parsed['code'])
                 # Step 2. Apply custom syntax fixes if any
+                logging.debug("Code after auto-format:\n%s", formatted_code)
                 fixed_code = custom_syntax_fix(formatted_code)
+                logging.debug("Code after custom syntax fix:\n%s", fixed_code)
 
                 # Validate after fixing
                 validation_result = self._validate_pyteal_syntax(fixed_code)
@@ -219,9 +205,10 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
                 }
 
             except Exception as e:
-                last_error = str(e)
+                # Log full traceback for easier debugging and propagate a detailed last_error
+                logging.exception("Generation error")
+                last_error = traceback.format_exc()
                 attempt += 1
-                logging.error(f"Generation error: {e}")
 
         return {
             'success': False,
@@ -267,9 +254,13 @@ PREVIOUS ATTEMPT FAILED WITH ERROR:
             for sep in ["\n\n---", "\n---", "\n**Contract Purpose Summary:", "\n**Contract Purpose Summary**"]:
                 if sep in raw_output:
                     parts = raw_output.split(sep, 1)
-                    code = parts.strip()
-                    explanation = parts.strip()[1]
+                    code = parts[0].strip()
+                    explanation = parts[1].strip() if len(parts) > 1 else ""
                     break
+
+        # final fallback: if nothing parsed, treat entire output as code
+        if not code and raw_output:
+            code = raw_output.strip()
 
         return {"code": code, "explanation": explanation, "deployment": deployment, "audit": audit}
 
