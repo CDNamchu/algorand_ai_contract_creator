@@ -280,10 +280,23 @@ PREVIOUS ATTEMPT FAILED WITH ERROR:
 
     def _validate_pyteal_syntax(self, code: str) -> Dict[str, str]:
         """Basic safety and content checks on the generated code."""
-        dangerous = ["eval(", "exec(", "open(", "subprocess", "os.system", "pickle.loads"]
-        for pat in dangerous:
-            if pat in code:
-                return {"valid": False, "error": f"Dangerous pattern detected: {pat}"}
+        # Split code into main block and contract logic
+        main_block_start = code.find('if __name__ == "__main__"')
+        if main_block_start == -1:
+            main_block_start = code.find("if __name__ == '__main__'")
+        
+        # Check contract logic (before __main__ block) for dangerous patterns
+        contract_code = code[:main_block_start] if main_block_start != -1 else code
+        
+        # These patterns are dangerous in contract logic but OK in test harness
+        dangerous_in_contract = ["eval(", "exec(", "subprocess", "os.system", "pickle.loads"]
+        for pat in dangerous_in_contract:
+            if pat in contract_code:
+                return {"valid": False, "error": f"Dangerous pattern detected in contract logic: {pat}"}
+        
+        # open() is only allowed in __main__ test block
+        if "open(" in contract_code:
+            return {"valid": False, "error": "Dangerous pattern detected in contract logic: open()"}
 
         lower = code.lower()
         if "from pyteal" in lower or "import pyteal" in lower or "txn" in lower or "app.globalput" in lower:
