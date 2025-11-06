@@ -72,6 +72,8 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
    - Integer overflow risks
 6. Always include proper fee checks and transaction validation
 7. Use defensive programming patterns
+8. NEVER use variable assignments inside And() or other expression contexts (use ScratchVar or separate statements)
+9. Return ONLY the Python code - NO markdown code fences, NO ``` markers
 
 *GROUPED TRANSACTION REQUIREMENTS:*
 - When using grouped transactions (Global.group_size() > 1), ALWAYS assert Txn.group_index() to prevent reordering attacks
@@ -88,7 +90,7 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
 - Example: Assert(App.localGet(Txn.sender(), LOCKED_AMOUNT) == Int(0)) before allowing closeout
 
 *OUTPUT STRUCTURE:*
-1. Complete PyTeal source code
+1. Complete PyTeal source code (plain Python, NO code fences)
 2. Contract purpose summary (2-3 sentences)
 3. Logic walkthrough (key conditions and branches)
 4. Security considerations
@@ -311,16 +313,30 @@ PREVIOUS ATTEMPT FAILED WITH ERROR:
         if not code:
             return code
 
-        sanitized = code
+        sanitized = code.strip()
+        
+        # Remove markdown code fences more aggressively
+        # Handle cases like: ```python\ncode``` or ```\ncode```
+        if sanitized.startswith('```'):
+            # Remove opening fence
+            sanitized = sanitized[3:]
+            # Remove language identifier (python, py, etc)
+            sanitized = re.sub(r'^\s*(?:python|py)\s*\n', '', sanitized, flags=re.IGNORECASE)
+            # Remove closing fence if present
+            if '```' in sanitized:
+                sanitized = sanitized[:sanitized.rfind('```')]
+            sanitized = sanitized.strip()
 
+        # Legacy fence extraction (if not handled above)
         if '```' in sanitized:
             start = sanitized.find('```')
             end = sanitized.find('```', start + 3)
             if end != -1:
                 inner = sanitized[start + 3:end]
                 inner = re.sub(r'^\s*python\s*\n', '', inner, flags=re.IGNORECASE)
-                sanitized = inner
+                sanitized = inner.strip()
 
+        # Remove trailing explanation sections
         for sep in ['\n\n---', '\n---', '\n**Contract Purpose Summary:', '\n**Logic Walkthrough:', '\n**Security Considerations:']:
             if sep in sanitized:
                 sanitized = sanitized.split(sep, 1)[0]
