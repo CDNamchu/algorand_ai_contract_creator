@@ -238,13 +238,35 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
 
 {description}
 
-Ensure the contract is production-ready and follows all security guidelines."""
+Ensure the contract is production-ready and follows all security guidelines.
+
+CRITICAL: Use ScratchVar for temporary values. NEVER assign variables inside And(), Or(), or Assert() expressions.
+
+Example of CORRECT pattern for grouped transactions:
+```
+def approval_program():
+    # Use ScratchVar for transaction references
+    asset_txn = ScratchVar(TxnObject)
+    
+    on_vote = Seq([
+        asset_txn.store(Gtxn[1]),
+        Assert(And(
+            Txn.group_index() == Int(0),
+            asset_txn.load().type_enum() == TxnType.AssetTransfer,
+            asset_txn.load().sender() == Txn.sender(),
+        )),
+        # ... rest of logic
+    ])
+```
+
+DO NOT use patterns like: `asset_txn = Gtxn[1],` inside And() - this is INVALID Python syntax."""
         if previous_error:
             base += f"""
 
 PREVIOUS ATTEMPT FAILED WITH ERROR:
 {previous_error}
-"""
+
+Please fix this error and regenerate valid PyTeal code."""
         return base
 
     def _parse_ai_response(self, raw_output: str) -> Dict[str, str]:
