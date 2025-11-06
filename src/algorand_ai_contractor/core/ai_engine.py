@@ -73,6 +73,20 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
 6. Always include proper fee checks and transaction validation
 7. Use defensive programming patterns
 
+*GROUPED TRANSACTION REQUIREMENTS:*
+- When using grouped transactions (Global.group_size() > 1), ALWAYS assert Txn.group_index() to prevent reordering attacks
+- Example: Assert(Txn.group_index() == Int(0)) to require app call is first in group
+- Never assume transaction order in a group without explicit group_index checks
+
+*OPT-IN AND STATE REQUIREMENTS:*
+- Before using App.localPut() or App.localGet(), verify the account has opted in using App.optedIn(account, Int(0))
+- For contracts that receive ASAs, document that the application account must opt-in to the ASA before use
+- Always validate opt-in state before reading/writing local state
+
+*CLOSEOUT PROTECTION:*
+- If contract manages locked funds or tokens, prevent CloseOut when user has non-zero locked balances
+- Example: Assert(App.localGet(Txn.sender(), LOCKED_AMOUNT) == Int(0)) before allowing closeout
+
 *OUTPUT STRUCTURE:*
 1. Complete PyTeal source code
 2. Contract purpose summary (2-3 sentences)
