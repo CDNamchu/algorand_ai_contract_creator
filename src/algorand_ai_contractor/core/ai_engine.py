@@ -240,7 +240,10 @@ YOU HAVE ACCESS TO REAL-TIME WEB SEARCH (if using Perplexity). If you need to ve
 
 Ensure the contract is production-ready and follows all security guidelines.
 
-CRITICAL: Use ScratchVar for temporary values. NEVER assign variables inside And(), Or(), or Assert() expressions.
+CRITICAL RULES:
+1. Use ScratchVar for temporary values. NEVER assign variables inside And(), Or(), or Assert() expressions.
+2. Txn.application_args is a TxnArray - ALWAYS index it: Txn.application_args[0], Txn.application_args[1], etc.
+3. NEVER use Txn.application_args == Bytes(...) - use Txn.application_args[0] == Bytes(...) instead.
 
 Example of CORRECT pattern for grouped transactions:
 ```
@@ -372,11 +375,18 @@ Please fix this error and regenerate valid PyTeal code."""
         sanitized = re.sub(r'Addr\(([^)]+)\)', _addr_repl, sanitized)
         
         # Fix common PyTeal bugs: Txn.application_args without indexing
-        # Pattern: globalPut/localPut(key, Txn.application_args) → should be Txn.application_args[0]
-        # This is a common AI mistake
+        # Pattern 1: globalPut/localPut(key, Txn.application_args) → should be Txn.application_args[0]
         sanitized = re.sub(
             r'(globalPut|localPut)\s*\(\s*([^,]+),\s*Txn\.application_args\s*\)',
             r'\1(\2, Txn.application_args[0])',
+            sanitized
+        )
+        
+        # Pattern 2: Txn.application_args == Bytes(...) → should be Txn.application_args[0] == Bytes(...)
+        # This appears in conditions like: Txn.application_args == Bytes("vote")
+        sanitized = re.sub(
+            r'\bTxn\.application_args\s*(==|!=)\s*',
+            r'Txn.application_args[0] \1 ',
             sanitized
         )
         
