@@ -313,15 +313,63 @@ PREVIOUS ATTEMPT FAILED WITH ERROR:
         """
         Execute the code string safely and extract approval_program callable.
         """
+        import inspect
+        from pyteal import Expr
+
         namespace = {}
+        # Execute the generated code in a fresh namespace
         exec(code, namespace)
-        if 'approval_program' in namespace:
-            obj = namespace['approval_program']
+
+        # 1) Look for common names
+        for name in ('approval_program', 'router', 'app'):
+            if name in namespace:
+                obj = namespace[name]
+                # If it's a zero-arg callable, call it
+                try:
+                    if callable(obj):
+                        sig = None
+                        try:
+                            sig = inspect.signature(obj)
+                        except (ValueError, TypeError):
+                            sig = None
+                        if sig is None or len(sig.parameters) == 0:
+                            return obj()
+                    return obj
+                except Exception:
+                    # If calling fails, continue to other discovery heuristics
+                    logging.exception("Error while resolving candidate '%s'", name)
+
+        # 2) Look for a pyteal.Expr directly in the namespace
+        for obj in namespace.values():
+            try:
+                if isinstance(obj, Expr):
+                    return obj
+            except Exception:
+                continue
+
+        # 3) Try zero-arg callables and test-compile their return value
+        for obj in namespace.values():
             if callable(obj):
-                return obj()
-            return obj
-        else:
-            raise RuntimeError("Generated code does not define 'approval_program' function or object")
+                try:
+                    sig = None
+                    try:
+                        sig = inspect.signature(obj)
+                    except (ValueError, TypeError):
+                        sig = None
+                    if sig is None or len(sig.parameters) == 0:
+                        candidate = obj()
+                        try:
+                            # quick compile test to verify it's a PyTeal program
+                            compileTeal(candidate, Mode.Application, version=6)
+                            return candidate
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+
+        # If we reach here, no suitable program was found — include namespace keys in error
+        keys = ','.join(sorted(list(namespace.keys())))
+        raise RuntimeError(f"Generated code does not define a PyTeal program. Namespace keys: {keys}")
 
     def _log_generation(
         self,
