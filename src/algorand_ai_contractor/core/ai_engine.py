@@ -244,20 +244,25 @@ CRITICAL RULES:
 1. Use ScratchVar for temporary values. NEVER assign variables inside And(), Or(), or Assert() expressions.
 2. Txn.application_args is a TxnArray - ALWAYS index it: Txn.application_args[0], Txn.application_args[1], etc.
 3. NEVER use Txn.application_args == Bytes(...) - use Txn.application_args[0] == Bytes(...) instead.
+4. For ScratchVar types: use TealType.uint64, TealType.bytes ONLY. NEVER store transactions in ScratchVar!
+5. Use Gtxn[0], Gtxn[1], Txn directly - DO NOT try to store them in ScratchVar.
+6. For multiple conditions, use Cond(). NEVER use If().ElseIf() - that syntax doesn't work in PyTeal!
 
 Example of CORRECT pattern for grouped transactions:
 ```
 def approval_program():
-    # Use ScratchVar for transaction references
-    asset_txn = ScratchVar(TxnObject)
+    # Use ScratchVar for values, NOT for transactions
+    locked_amount = ScratchVar(TealType.uint64)
+    vote_choice = ScratchVar(TealType.bytes)
     
     on_vote = Seq([
-        asset_txn.store(Gtxn[1]),
+        # Use Gtxn[1] directly - don't store it
         Assert(And(
             Txn.group_index() == Int(0),
-            asset_txn.load().type_enum() == TxnType.AssetTransfer,
-            asset_txn.load().sender() == Txn.sender(),
+            Gtxn[1].type_enum() == TxnType.AssetTransfer,
+            Gtxn[1].sender() == Txn.sender(),
         )),
+        locked_amount.store(Gtxn[1].asset_amount()),
         # ... rest of logic
     ])
 ```
@@ -387,6 +392,30 @@ Please fix this error and regenerate valid PyTeal code."""
         sanitized = re.sub(
             r'\bTxn\.application_args\s*(==|!=)\s*',
             r'Txn.application_args[0] \1 ',
+            sanitized
+        )
+        
+        # Pattern 3: Remove ScratchVar declarations for transactions (invalid pattern)
+        # The AI sometimes tries to create: asset_txn = ScratchVar(TealType.txn/anytype)
+        # This is wrong - transactions should use simple Python variable assignment
+        # Remove lines like: asset_txn = ScratchVar(TealType.anytype)
+        lines = sanitized.split('\n')
+        filtered_lines = []
+        for line in lines:
+            # Skip ScratchVar declarations that look like they're for transactions
+            if re.search(r'(asset_txn|txn_\w+|.*_txn)\s*=\s*ScratchVar\s*\(\s*TealType\.(anytype|txn)\s*\)', line):
+                continue
+            filtered_lines.append(line)
+        sanitized = '\n'.join(filtered_lines)
+        
+        # Pattern 4: Replace .store(Gtxn[...]) with simple assignment
+        # If the AI tries: asset_txn.store(Gtxn[1])
+        # This will fail because we removed the ScratchVar declaration
+        # Instead, we should have used: asset_txn = Gtxn[1] (which may already exist)
+        # Remove .store() calls on transaction variables
+        sanitized = re.sub(
+            r'(\w*_?txn)\.store\((Gtxn\[\d+\])\)',
+            r'# Removed invalid pattern: \1.store(\2)',
             sanitized
         )
         
